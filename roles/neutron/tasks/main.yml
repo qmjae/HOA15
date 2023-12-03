@@ -1,0 +1,225 @@
+---
+- name: Install Neutron Service
+  hosts: neutron
+  become: true
+  vars:
+    neutron_db_password: "neutron"
+    neutron_user_password: "neutron"
+    rabbit_password: "rabbitpass"
+    nova_password: "nova"
+    provider_interface_name: "enp0s8"
+    start_ip_address: "192.168.56.150"
+    end_ip_address: "92.168.56.200"
+    dns_resolver: "8.8.8.8"
+    provider_network_gateway: "192.168.56.1"
+    provider_network_cidr: "192.168.56.0/24"
+    metadata_secret: "neutron"
+    
+  tasks:
+    - name: Install MySQL Python package
+      apt:
+        name: python3-mysqldb
+        state: present
+
+    - name: Create Neutron Database
+      mysql_db:
+        name: neutron
+        state: present
+      become: true
+      become_user: root
+      vars:
+       mysql_user: root
+       mysql_password: '211419.!'
+      mysql_host: localhost
+       mysql_socket: /run/mysqld/mysqld.sock
+       
+    - name: Create Neutron Database User
+      mysql_user:
+       name: neutron
+        password: "{{ neutron_db_password }}"
+        host: localhost
+        priv: 'neutron.*:ALL'
+        state: present
+
+    - name: Create Neutron Database User for remote host
+      mysql_user:
+        name: neutron
+        password: "{{ neutron_db_password }}"
+        host: "%"
+        priv: 'neutron.*:ALL'
+        state: present
+
+    - name: Create Neutron User
+      shell: "openstack user create --domain default --password {{ neutron_user_password }} neutron"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+
+    - name: Add Neutron User to Admin Role
+      command: "openstack role add --project service --user neutron admin"
+      become: false
+      environment:
+       HOME: "{{ lookup('env','HOME') }}"
+       OS_AUTH_URL: "http://192.168.56.102:5000"
+       OS_USERNAME: "admin"
+       OS_PASSWORD: "admin"
+       OS_PROJECT_NAME: "admin"
+       OS_USER_DOMAIN_NAME: "Default"
+       OS_PROJECT_DOMAIN_NAME: "Default"
+       
+    - name: Create Neutron Service
+      command: "openstack service create --name neutron --description 'OpenStack Networking' network"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+        
+    - name: Create Neutron Public Endpoint
+      command: "openstack endpoint create --region RegionOne network public http://192.168.56.102:9696"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+       
+    - name: Create Neutron Internal Endpoint
+      command: "openstack endpoint create --region RegionOne network internal http://192.168.56.102:9696"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+       
+    - name: Create Neutron Admin Endpoint
+      command: "openstack endpoint create --region RegionOne network admin http://192.168.56.102:9696"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default" 
+             
+    - name: Install Neutron packages
+      apt:
+        name:
+          - neutron-server
+          - neutron-plugin-ml2
+          - neutron-openvswitch-agent
+          - neutron-dhcp-agent
+          - neutron-metadata-agent
+        state: present
+
+    - name: Configure neutron.conf
+      template:
+        src: neutron.conf.j2
+        dest: /etc/neutron/neutron.conf
+      notify:
+       - Restart Neutron Server
+
+    - name: Configure ml2_conf.ini
+      template:
+        src: ml2_conf.ini.j2
+        dest: /etc/neutron/plugins/ml2/ml2_conf.ini
+      notify:
+        - Restart Neutron Server
+        
+    - name: Configure openvswitch_agent.ini
+      template:
+        src: openvswitch_agent.ini.j2
+        dest: /etc/neutron/plugins/ml2/openvswitch_agent.ini
+      notify:
+        - Restart Neutron OpenvSwitch Agent
+
+    - name: Configure dhcp_agent.ini
+      template:
+        src: dhcp_agent.ini.j2
+        dest: /etc/neutron/dhcp_agent.ini
+      notify:
+        - Restart Neutron DHCP Agent
+
+#    - name: Create Neutron Subnet
+#      command: "openstack subnet create --network provider --allocation-pool start={{ start_ip_address }},end={{ end_ip_address }} --dns-nameserver {{ dns_resolver }} --gateway {{ provider_network_gateway }} --subnet-range {{ provider_network_cidr }} provider"
+#      become: false
+#      environment:
+#      HOME: "{{ lookup('env','HOME') }}"
+#        OS_AUTH_URL: "http://192.168.56.102:5000"
+#       OS_USERNAME: "admin"
+#        OS_PASSWORD: "admin"
+#       OS_PROJECT_NAME: "admin"
+#        OS_USER_DOMAIN_NAME: "Default"
+#        OS_PROJECT_DOMAIN_NAME: "Default"
+               
+    - name: Configure metadata_agent.ini
+      template:
+        src: metadata_agent.ini.j2
+        dest: /etc/neutron/metadata_agent.ini
+      notify:
+        - Restart Neutron Metadata Agent
+
+#    - name: Finalize Neutron Installation
+#      command: "su -s /bin/sh -c 'neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head' neutron"
+#      become: false
+#      environment:
+#        HOME: "{{ lookup('env','HOME') }}"
+#        OS_AUTH_URL: "http://192.168.56.102:5000"
+#       OS_USERNAME: "admin"
+#        OS_PASSWORD: "admin"
+#        OS_PROJECT_NAME: "admin"
+#       OS_USER_DOMAIN_NAME: "Default"
+#        OS_PROJECT_DOMAIN_NAME: "Default"
+         
+    - name: Restart Neutron Services
+      service:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - nova-api
+        - neutron-server
+        - neutron-openvswitch-agent
+        - neutron-dhcp-agent
+        - neutron-metadata-agent
+        - neutron-l3-agent
+        
+  handlers:
+    - name: Restart Neutron Server
+      service:
+        name: neutron-server
+        state: restarted
+        
+    - name: Restart Neutron OpenvSwitch Agent
+      service:
+        name: neutron-openvswitch-agent
+        state: restarted
+
+    - name: Restart Neutron DHCP Agent
+      service:
+        name: neutron-dhcp-agent
+        state: restarted
+
+    - name: Restart Neutron Metadata Agent
+      service:
+        name: neutron-metadata-agent
+        state: restarted
+

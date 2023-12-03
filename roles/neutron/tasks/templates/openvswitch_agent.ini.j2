@@ -1,0 +1,9 @@
+# openvswitch_agent.ini
+[ovs]
+bridge_mappings = provider:{{ provider_interface_name }}
+
+[securitygroup]
+enable_security_group = true
+firewall_driver = openvswitch
+# firewall_driver = iptables_hybrid
+

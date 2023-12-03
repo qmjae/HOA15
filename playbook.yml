@@ -1,0 +1,4 @@
+---
+- import_playbook: roles/neutron/tasks/main.yml
+- import_playbook: roles/horizon/tasks/main.yml
+- import_playbook: roles/cinder/tasks/main.yml

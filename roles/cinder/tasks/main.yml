@@ -1,0 +1,172 @@
+---
+- name: Install Cinder Service
+  hosts: cinder
+  become: true
+  vars:
+    cinder_db_password: "cinder"
+    cinder_user_password: "cinder"
+    rabbit_password: "rabbitpass"
+    nova_password: "nova"
+    
+  tasks:
+    - name: Install MySQL Python package
+      apt:
+        name: python3-mysqldb
+        state: present
+
+    - name: Create Cinder Database
+      mysql_db:
+        name: cinder
+        state: present
+      become: true
+      become_user: root
+      vars:
+       mysql_user: root
+       mysql_password: '211419.!'
+       mysql_host: localhost
+       mysql_socket: /run/mysqld/mysqld.sock
+       
+    - name: Create Cinder Database User
+      mysql_user:
+        name: cinder
+        password: "{{ cinder_db_password }}"
+        host: localhost
+        priv: 'cinder.*:ALL'
+        state: present
+
+    - name: Create Cinder Database User for remote host
+      mysql_user:
+        name: cinder
+        password: "{{ cinder_db_password }}"
+        host: "%"
+        priv: 'cinder.*:ALL'
+        state: present
+
+    - name: Create Cinder User
+      shell: "openstack user create --domain default --password {{ cinder_user_password }} cinder"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+
+    - name: Add Cinder User to Admin Role
+      command: "openstack role add --project service --user cinder admin"
+      become: false
+      environment:
+       HOME: "{{ lookup('env','HOME') }}"
+       OS_AUTH_URL: "http://192.168.56.102:5000"
+       OS_USERNAME: "admin"
+       OS_PASSWORD: "admin"
+       OS_PROJECT_NAME: "admin"
+       OS_USER_DOMAIN_NAME: "Default"
+       OS_PROJECT_DOMAIN_NAME: "Default"
+       
+    - name: Create Cinder Service
+      command: "openstack service create --name cinderv3 --description 'OpenStack Block Storage' volumev3"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+        
+    - name: Create Cinder Public Endpoint
+      command: |
+         openstack endpoint create --region RegionOne volumev3 public http://192.168.56.102:8776/v3/%\(project_id\)s
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+
+       
+    - name: Create Cinder Internal Endpoint
+      command: |
+        openstack endpoint create --region RegionOne volumev3 internal http://192.168.56.102:8776/v3/%\(project_id\)s
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+       
+    - name: Create Cinder Admin Endpoint
+      command: |
+        openstack endpoint create --region RegionOne volumev3 admin http://192.168.56.102:8776/v3/%\(project_id\)s
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default" 
+             
+    - name: Install Cinder packages
+      apt:
+        name:
+          - cinder-api
+          - cinder-scheduler
+        state: present
+
+    - name: Configure cinder.conf
+      template:
+        src: cinder.conf.j2
+        dest: /etc/cinder/cinder.conf
+      notify:
+       - Restart Cinder-Scheduler
+    
+    - name: Populate Block Storage Database 
+      command: "su -s /bin/sh -c 'cinder-manage db sync' cinder"
+      become: false
+      environment:
+        HOME: "{{ lookup('env','HOME') }}"
+        OS_AUTH_URL: "http://192.168.56.102:5000"
+        OS_USERNAME: "admin"
+        OS_PASSWORD: "admin"
+        OS_PROJECT_NAME: "admin"
+        OS_USER_DOMAIN_NAME: "Default"
+        OS_PROJECT_DOMAIN_NAME: "Default"
+         
+    - name: Configure nova.conf
+      template:
+        src: nova.conf.j2
+        dest: /etc/nova/nova.conf
+      notify:
+       - Restart Nova-API Server
+       - Restart Apache2
+       
+  handlers:
+    - name: Restart Nova-API Server
+      service:
+        name: nova-api
+        state: restarted
+        
+    - name: Restart Cinder-Scheduler
+      service:
+        name: cinder-scheduler
+        state: restarted
+
+    - name: Restart Apache2
+      service:
+        name: apache2
+        state: restarted
+
+
+

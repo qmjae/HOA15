@@ -1,0 +1,21 @@
+---
+- name: Install Horizon Service
+  hosts: horizon
+  become: true
+  tasks:
+    - name: Install openstack-dashboard package
+      apt:
+        name: openstack-dashboard
+        state: present
+
+    - name: Configure local_settings.py
+      template:
+        src: local_settings.py.j2
+        dest: /etc/openstack-dashboard/local_settings.py
+      notify: Reload Apache
+
+  handlers:
+  - name: Reload Apache
+    systemd:
+      name: apache2
+      state: reloaded
